@@ -1,0 +1,57 @@
+name: Deploy Yii2 App
+
+on:
+  push:
+    branches:
+      - main  # Trigger on push to main branch [cite: 6]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app  # Path to your app's Dockerfile
+          push: true
+          tags: your-docker-hub-username/yii2-app:latest # Tag the image [cite: 7]
+          
+      - name: SSH and deploy
+        uses: appleboy/ssh-action@v10
+        with:
+          host: ${{ secrets.EC2_HOST }}  # Use GitHub Secrets [cite: 10]
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            docker login -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_PASS }} # Login to Docker Hub
+            docker pull your-docker-hub-username/yii2-app:latest # Pull new image [cite: 8]
+            docker service update --image your-docker-hub-username/yii2-app:latest yii2-app # Update service [cite: 8]
+    ```
+
+    * This workflow checks out the code, builds and pushes the Docker image to Docker Hub, and then connects to the EC2 instance via SSH to pull the new image and update the Docker Swarm service. [cite: 6, 7, 8, 10]
+    * **Important:** Replace `your-docker-hub-username`, `your-domain.com`, etc., with your actual values.  Also, set up GitHub Secrets (`EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY`, `DOCKER_USER`, `DOCKER_PASS`) to store sensitive information securely. [cite: 10]
+
+**C.  Dockerfile (`app/Dockerfile`)**
+
+```dockerfile
+FROM php:7.4-apache  # Or your preferred PHP version
+
+# Install PHP extensions
+RUN apt-get update && apt-get install -y \
+    libzip-dev \
+    && docker-php-ext-install zip pdo pdo_mysql
+
+# Copy application code
+COPY . /var/www/html
+
+# Install Composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+# Install Yii2 dependencies
+WORKDIR /var/www/html
+RUN composer install --no-dev --optimize-autoloader
+
+# Expose port
+EXPOSE 8080 # Or the port your app uses
